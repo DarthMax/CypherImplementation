@@ -25,8 +25,8 @@ public class Query1 extends Query{
 
   protected QueryGraph getQueryGraph() {
 
-    QueryVertex a = new QueryVertex("",new HashMap<>(),true);
-    QueryVertex b = new QueryVertex("",new HashMap<>(),false);
+    QueryVertex a = new QueryVertex("a","",new HashMap<>(),true);
+    QueryVertex b = new QueryVertex("b","",new HashMap<>(),false);
 
     QueryEdge e1 = new QueryEdge(a,b,"",new HashMap<>());
     QueryEdge e2 = new QueryEdge(b,a,"",new HashMap<>());

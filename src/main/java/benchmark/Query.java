@@ -1,9 +1,12 @@
 package benchmark;
 
 import operators.datastructures.GraphExtended;
+import org.apache.flink.api.java.DataSet;
 import org.apache.flink.api.java.ExecutionEnvironment;
 import queryplan.RuleBasedOptimizer;
 import queryplan.querygraph.QueryGraph;
+
+import java.util.ArrayList;
 
 /**
  * Created by max on 19.10.16.
@@ -24,12 +27,9 @@ public abstract class Query {
 
     RuleBasedOptimizer planner = new RuleBasedOptimizer(queryGraph,this.input);
 
+    DataSet<ArrayList<Long>> results = planner.genResults();
 
-    //for(VertexExtended vertex : planner.genQueryPlan().collect()) {
-    //  System.out.println("vertex.getVertexId() = " + vertex.getVertexId());
-    //}
-
-    Long count = planner.genQueryPlan().count();
+    Long count = results.count();
 
     return(count);
   }

@@ -3,6 +3,8 @@ package benchmark;
 import benchmark.queries.*;
 import org.apache.flink.api.java.ExecutionEnvironment;
 
+import java.util.concurrent.TimeUnit;
+
 
 /**
  * Created by max on 18.10.16.
@@ -10,19 +12,13 @@ import org.apache.flink.api.java.ExecutionEnvironment;
 public class BenchmarkRunner {
 
   public static void main(String[] args) throws Exception {
-    //Configuration conf = new Configuration();
-    //conf.setInteger("taskmanager.heap.mb",2000);
-    //ExecutionEnvironment env = ExecutionEnvironment.createLocalEnvironment(conf);
-    //env.setParallelism(1);
-
     ExecutionEnvironment env = ExecutionEnvironment.getExecutionEnvironment();
 
-    GraphReader graphReader =
-      new GraphReader("/home/max/Downloads/web-Google" + ".txt", env);
+    GraphReader graphReader = new GraphReader(args[0], env);
 
     Query query;
 
-    switch ("1") {
+    switch (args[1]) {
     case "1":
       //(a)-[]->(b)-[]->(a)
       query = new Query1(graphReader.loadGraph(), env);
@@ -58,6 +54,8 @@ public class BenchmarkRunner {
     }
 
     System.out.println("Results = " + query.run());
+    System.out.println("Running Time = "+ env.getLastJobExecutionResult()
+      .getNetRuntime(TimeUnit.SECONDS));
   }
 }
 

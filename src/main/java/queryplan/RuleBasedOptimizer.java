@@ -163,11 +163,155 @@ public class RuleBasedOptimizer {
 		//Where to collect outputs
 		for (QueryVertex qv : query.getQueryVertices()) {
 			if (qv.isOutput()) {
-				UnaryOperators u = new UnaryOperators(graph, qv.getComponent().getData());
-				return u.projectDistinctVertices(qv.getComponent().getVertexIndex(qv));
+				UnaryOperators u = new UnaryOperators(graph, qv.getComponent()
+			.getData());
+				return u.projectDistinctVertices(qv.getComponent().getVertexIndex
+		 (qv));
 			}
 		}
 		return null;
+	}
+
+
+	public DataSet<ArrayList<Long>> genResults() throws Exception {
+		//Traverse each query vertex and generate a initial component
+		for (QueryVertex qv : query.getQueryVertices()) {
+			double est = qv.getPrio();
+			ScanOperators s = new ScanOperators(graph);
+
+			FilterFunction vf;
+			FilterFunction newvf;
+			vf = new LabelComparisonForVertices(qv.getLabel());
+			if (!qv.getProps().isEmpty()) {
+				HashMap<String, Tuple2<String, String>> props = (HashMap<String, Tuple2<String, String>>) qv.getProps().clone();
+				for (String k : props.keySet()) {
+					newvf = new PropertyFilterForVertices(k, props.get(k).f0, props.get(k).f1);
+					vf = new AND<VertexExtended<Long, HashSet<String>, HashMap<String, String>>>
+						(vf, newvf);
+				}
+			}
+			DataSet<ArrayList<Long>> paths = s.getInitialVerticesByBooleanExpressions(vf);
+			ArrayList<Object> cols = new ArrayList<>();
+			cols.add(qv);
+			qv.setComponent(new QueryGraphComponent(est, paths, cols));
+
+		}
+
+		ArrayList<QueryEdge> edges = new ArrayList<>(Arrays.asList(query.getQueryEdges()));
+
+		while (!edges.isEmpty()) {
+			//heuristic rule 1, selectivity
+			double maxEst = Double.MIN_VALUE;
+			JoinHint strategy;
+			QueryEdge e = edges.get(0);
+			double compEst = 0;
+
+			for (QueryEdge cand : edges) {
+				double estSrc = cand.getSourceVertex().getComponent().getEst();
+				double estTar = cand.getTargetVertex().getComponent().getEst();
+				double estEdge = e.getPrio() + estSrc + estTar;
+				if (maxEst < estEdge) {
+					maxEst = estEdge;
+					e = cand;
+				}
+			}
+			if (maxEst >= 2.5) {
+				//est >= 2.5 contains at least two conditions about property
+				//works for high selectivity queries
+				strategy = JoinHint.BROADCAST_HASH_FIRST;
+			} else if (maxEst >= 1.9) {
+				//est > 1.9 contains at least one condition about property
+				//works for middle selectivity queries
+				strategy = JoinHint.REPARTITION_HASH_FIRST;
+			} else {
+				strategy = JoinHint.REPARTITION_SORT_MERGE;
+			}
+			edges.remove(e);
+
+			DataSet<ArrayList<Long>> paths, joinedPaths;
+			ArrayList<Object> leftColumns, rightColumns;
+			FilterFunction ef;
+			FilterFunction newef;
+			ef = new LabelComparisonForEdges(e.getLabel());
+
+			if (!e.getProps().isEmpty()) {
+				HashMap<String, Tuple2<String, String>> props = (HashMap<String, Tuple2<String, String>>) e.getProps().clone();
+				for (String k : props.keySet()) {
+					newef = new PropertyFilterForEdges(k, props.get(k).f0, props.get(k).f1);
+					ef = new AND<EdgeExtended<Long, Long, String, HashMap<String, String>>>(ef, newef);
+				}
+			}
+
+			if (e.getSourceVertex().getComponent().getEst() >= e.getTargetVertex().getComponent().getEst()) {
+				UnaryOperators u = new UnaryOperators(graph, e.getSourceVertex().getComponent().getData());
+				int firstCol = e.getSourceVertex().getComponent().getVertexIndex(e.getSourceVertex());
+				paths = u.selectOutEdgesByBooleanExpressions(firstCol, ef, strategy);
+				leftColumns = e.getSourceVertex().getComponent().getColumns();
+				int secondCol = 0;
+
+				if(e.getSourceVertex().getComponent().getVertexIndex(e.getTargetVertex()) != -1){
+					secondCol = e.getSourceVertex().getComponent().getVertexIndex(e.getTargetVertex());
+					joinedPaths = paths.filter(new PathFilter(leftColumns.size() + 1,
+						secondCol));
+				} else {
+					BinaryOperators b = new BinaryOperators(paths, e.getTargetVertex().getComponent().getData());
+					secondCol = e.getTargetVertex().getComponent().getVertexIndex(e.getTargetVertex());
+					joinedPaths = b.joinOnAfterVertices(leftColumns.size() + 1, secondCol);
+				}
+
+				rightColumns = (ArrayList<Object>) e.getTargetVertex().getComponent().getColumns().clone();
+				rightColumns.remove(secondCol);
+				rightColumns.add(0, e.getTargetVertex());
+				compEst = e.getSourceVertex().getComponent().getEst();
+			} else {
+				UnaryOperators u = new UnaryOperators(graph, e.getTargetVertex().getComponent().getData());
+				int firstCol = e.getTargetVertex().getComponent().getVertexIndex(e.getTargetVertex());
+				paths = u.selectInEdgesByBooleanExpressions(firstCol, ef, strategy);
+
+				leftColumns = e.getTargetVertex().getComponent().getColumns();
+
+				BinaryOperators b = new BinaryOperators(paths, e.getSourceVertex().getComponent().getData());
+				int secondCol = e.getSourceVertex().getComponent().getVertexIndex(e.getSourceVertex());
+				joinedPaths = b.joinOnAfterVertices(leftColumns.size() + 1, secondCol);
+
+				rightColumns = (ArrayList<Object>) e.getSourceVertex().getComponent().getColumns().clone();
+				rightColumns.remove(secondCol);
+				rightColumns.add(0, e.getSourceVertex());
+				compEst = e.getTargetVertex().getComponent().getEst();
+			}
+
+			ArrayList<Object> columns = new ArrayList<>();
+			columns.addAll(leftColumns);
+			columns.add(e);
+			columns.addAll(rightColumns);
+
+			double est = compEst;
+			QueryGraphComponent gc = new QueryGraphComponent(est, joinedPaths, columns);
+
+			for (Object o : columns) {
+				if (o.getClass() == QueryVertex.class) {
+					QueryVertex qv = (QueryVertex) o;
+					qv.setComponent(gc);
+				}
+			}
+		}
+		//Where to collect outputs
+		QueryVertex qv = query.getQueryVertices()[0];
+		return(qv.getComponent().getData());
+	}
+
+	private class PathFilter implements FilterFunction<ArrayList<Long>> {
+		private int firstCol;
+		private int secondCol;
+
+		public PathFilter(int firstCol, int secondCol) {
+			this.firstCol = firstCol;
+			this.secondCol = secondCol;
+		}
+
+		public boolean filter(ArrayList<Long> paths) {
+			return(paths.get(firstCol).equals(paths.get(secondCol)));
+		}
 	}
 	
 }

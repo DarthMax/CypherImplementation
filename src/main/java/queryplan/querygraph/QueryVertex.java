@@ -14,6 +14,8 @@ public class QueryVertex {
 	//indicate the label specified for the vertex in a query
 	private String label;
 
+	public String name;
+
 	//indicate the properties specified for the vertex in a query
 	private	HashMap<String, Tuple2<String, String>> props;
 
@@ -36,8 +38,23 @@ public class QueryVertex {
 		if(!props.isEmpty()) {
 			priority += props.size();
 		}
+		this.name = "";
 	}
-	
+
+	public QueryVertex(String name,String s, HashMap<String, Tuple2<String,
+		String>> ps, boolean rv) {
+		label = s;
+		props = ps;
+		isReturnedValue = rv;
+		if(!s.equals("")) {
+			priority += 0.7;
+		}
+		if(!props.isEmpty()) {
+			priority += props.size();
+		}
+		this.name=name;
+	}
+
 	public String getLabel() {
 		return label;
 	}
